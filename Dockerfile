@@ -1,7 +1,7 @@
 FROM openjdk:11-jdk-slim
 ARG JAR_FILE=target/*.jar
-COPY ${JAR_FILE} *.jar
-ENTRYPOINT ["java","-jar","/*.jar"]
+COPY ${JAR_FILE} app.jar
+ENTRYPOINT ["java","-jar","/app.jar"]
 
 ENV DOCKERIZE_VERSION v0.7.0
 RUN apt-get update \
