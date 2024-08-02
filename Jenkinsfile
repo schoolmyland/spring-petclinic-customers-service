@@ -46,7 +46,14 @@ pipeline {
         }
         stage('Test Acceptance') {
             steps {
+                script {
                 sh '$JENK_TOOLBOX/ctrl/checkpod.sh developpement'
+                }
+            }
+            post {
+                failure {
+                    sh 'helm uninstall petclinic-dev'
+                }
             }
         }
         stage('Test Performance Jmeter') {
