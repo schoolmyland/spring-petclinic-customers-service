@@ -1,8 +1,5 @@
 pipeline {
     environment {
-        DOCKER_ID = "poissonchat13"
-        DOCKER_IMAGE = "spring-petclinic-customers-service"
-        JMETER_TAG = "cust"
         JENK_TOOLBOX = "/opt/jenkins"
     }
     agent any
@@ -12,6 +9,12 @@ pipeline {
                 script {
                     VERSION_MAJEUR = sh(script: 'head -n 5 ./README.md | tail -n 1', returnStdout: true).trim()
                     env.DOCKER_TAG = "${VERSION_MAJEUR}.${BUILD_ID}"
+                    def jobName = env.JOB_NAME
+                    def splitParts = jobName.split('_')
+                    def prefix = "spring-petclinic-"
+                    env.JMETER_TAG = splitParts[0]
+                    env.DOCKER_IMAGE = splitParts[1]
+                    env.SERVICE_NAME =  env.DOCKER_IMAGE.replaceFirst(prefix, '')
                 }
             }
         }
@@ -78,6 +81,21 @@ pipeline {
                 }
             }
         }
+        stage('Push Image pour prod') {
+            environment {
+                DOCKER_ID = credentials("DOCKER_HUB_ID")
+                DOCKER_PASS = credentials("DOCKER_HUB_PASS")
+            }
+            steps {
+                sh '''
+                docker login -u $DOCKER_ID -p $DOCKER_PASS
+                docker tag localhost:5000/$DOCKER_IMAGE:latest $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG
+                docker tag $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG $DOCKER_ID/$DOCKER_IMAGE:latest
+                docker push $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG
+                docker push $DOCKER_ID/$DOCKER_IMAGE:latest
+                '''
+            }
+        }
         stage('Demontage Env Dev') {
             environment {
                 KUBECONFIG = credentials("confkub")
@@ -92,18 +110,21 @@ pipeline {
                 '''
             }
         }
-        stage('Push Image pour prod') {
+        stage('Mise en Production') {
             environment {
-                DOCKER_PASS = credentials("DOCKER_HUB_PASS")
+                CLUSTERNAME = credentials("cluster")
             }
             steps {
-                sh '''
-                docker login -u $DOCKER_ID -p $DOCKER_PASS
-                docker tag localhost:5000/$DOCKER_IMAGE:latest $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG
-                docker tag $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG $DOCKER_ID/$DOCKER_IMAGE:latest
-                docker push $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG
-                docker push $DOCKER_ID/$DOCKER_IMAGE:latest
-                '''
+                withCredentials([[
+                $class: 'AmazonWebServicesCredentialsBinding',
+                  credentialsId: "kube-admin",
+                  accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                  secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                ]]) {
+                  sh '''
+                  $JENK_TOOLBOX/ctrl/updatePod.sh $CLUSTERNAME $SERVICE_NAME
+                  '''
+                }
             }
         }
     }
